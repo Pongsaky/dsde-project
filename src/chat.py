@@ -11,7 +11,6 @@ from langchain_core.messages import HumanMessage, AIMessage
 from llama_index.core.text_splitter import TokenTextSplitter
 from dotenv import load_dotenv
 
-
 load_dotenv()
 
 class LLMSummarization:

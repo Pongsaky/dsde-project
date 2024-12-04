@@ -4,3 +4,4 @@ data.csv
 cleaned_arxiv.csv
 *.rar
 *.json
+.env

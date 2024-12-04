@@ -53,15 +53,6 @@ def chunk_documents(documents, chunk_size:int=1024, chunk_overlap:int=512) -> Li
     return nodes
 
 if __name__ == "__main__":
-    llm_utils = LLMSummarization(
-        model="typhoon-instruct",
-        api_key=os.getenv("OPENTYPHOON_API_KEY"),
-        base_url="https://api.opentyphoon.ai/v1",
-        max_tokens=4096,
-        temperature=0.4,
-        isAzure=False,
-    )
-
     documents = load_documents()
     nodes = chunk_documents(documents)
 
