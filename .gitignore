@@ -1,4 +1,6 @@
 data/*
 .DS_Store
 data.csv
+cleaned_arxiv.csv
 *.rar
+*.json
