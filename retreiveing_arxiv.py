@@ -23,5 +23,5 @@ combined_df = pd.concat(all_chunks, ignore_index=True)
 
 combined_df.insert(7, "source", "arxiv") 
 combined_df['year'] = combined_df['year'].str[:4]
-combined_df.to_csv('cleaned_arxiv.csv', index=False)
+combined_df.to_csv('arxiv_dataset.csv', index=False)
 
