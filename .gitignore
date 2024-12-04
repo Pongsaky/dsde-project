@@ -5,3 +5,4 @@ cleaned_arxiv.csv
 *.rar
 *.json
 .env
+*.pyc
