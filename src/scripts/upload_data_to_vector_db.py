@@ -56,7 +56,7 @@ if __name__ == "__main__":
     documents = load_documents()
     nodes = chunk_documents(documents)
 
-    embedding_model = SentenceTransformer(model_name_or_path="model_weight/BAAI_bge_m3")
+    embedding_model = SentenceTransformer("BAAI/bge-m3")
     qdrantDB = QdrantVectorDB(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_API"), embedding_model=embedding_model, timeout=100)
 
     # Create a new collection with the name and dimension 1024

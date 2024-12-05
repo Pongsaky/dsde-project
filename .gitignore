@@ -4,5 +4,10 @@ data.csv
 cleaned_arxiv.csv
 *.rar
 *.json
-.env
 *.pyc
+.env
+test.ipynb
+
+qdrant_storage/*
+*.log
+*.csv
