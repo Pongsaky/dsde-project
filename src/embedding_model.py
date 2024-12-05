@@ -1,5 +1,9 @@
+from typing import List
 from openai import AzureOpenAI
 from langchain_google_vertexai import VertexAIEmbeddings
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class OpenAIEmbedding:
     def __init__(self, host, api_key) -> None:
@@ -23,9 +27,8 @@ class OpenAIEmbedding:
     
 class GeminiEmbedding:
     def __init__(self) -> None:
-        self.embedding_model = VertexAIEmbeddings(model="text-embedding-004", project="gen-lang-client-0811883729")
+        self.embedding_model = VertexAIEmbeddings(model="text-embedding-004")
 
-    def get_embedding(self, text:str):
-        embedding = self.embedding_model.embed_query(text)
-
+    def get_embedding(self, documents:List[str]):
+        embedding = self.embedding_model.embed_documents(documents)
         return embedding
