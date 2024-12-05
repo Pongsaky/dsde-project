@@ -14,6 +14,8 @@ from dotenv import load_dotenv
 import hashlib
 import json
 import tqdm
+from multiprocessing import Pool, cpu_count, Manager, Lock
+import time
 
 load_dotenv()
 
@@ -29,12 +31,13 @@ def load_checkpoints():
 def generate_hash(doc_id, source):
     return hashlib.sha256(f"{source}_{doc_id}".encode()).hexdigest()
 
-def save_checkpoint(doc_id, source):
-    checkpoints = load_checkpoints()
-    doc_hash = generate_hash(doc_id, source)
-    checkpoints[doc_hash] = True
-    with open(CHECKPOINT_FILE, "w") as f:
-        json.dump(checkpoints, f)
+def save_checkpoint(doc_id, source, lock):
+    with lock:
+        checkpoints = load_checkpoints()
+        doc_hash = generate_hash(doc_id, source)
+        checkpoints[doc_hash] = True
+        with open(CHECKPOINT_FILE, "w") as f:
+            json.dump(checkpoints, f)
 
 def normalize_id(id: str):
     if id.endswith(".0"):
@@ -92,44 +95,57 @@ def chunk_documents(documents: List[Document], processed_indices:List[int], chun
 
     return nodes
 
+def process_chunk(args):
+    csv_path, offset, chunk_size, chunk_overlap, lock = args
+    documents = load_documents(csv_path=csv_path, offset=offset, chunk_size=chunk_size)
+    processed_indices = []
+    nodes = chunk_documents(documents, processed_indices, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    return nodes, processed_indices
+
 if __name__ == "__main__":
 
     csv_path = "combined_data.csv"
 
     document_length = 888907
     init_offset = initial_offset(csv_path=csv_path)
-    chunk_size = 1000
+    chunk_size = 128
 
     COLLECTION_NAME = "DSDE-project-local-embedding"
-    # local_embedding_model = SentenceTransformer("BAAI/bge-m3") 
+    local_embedding_model = SentenceTransformer("BAAI/bge-m3") 
 
     print(f"Initial offset: {init_offset}")
 
-    # qdrantDB = QdrantVectorDB(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_API"), embedding_model=local_embedding_model, timeout=100)
-    # qdrantDB.recreate_collection(collection_name=COLLECTION_NAME)
+    qdrantDB = QdrantVectorDB(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_API_KEY"), embedding_model=local_embedding_model, timeout=100)
+    qdrantDB.recreate_collection(collection_name=COLLECTION_NAME)
+
+    manager = Manager()
+    lock = manager.Lock()
+    # processes = cpu_count()
+    processes = 6 # Model size = 4 GB
+    pool = Pool(processes)
 
     for offset in tqdm.tqdm(range(init_offset, document_length, chunk_size)):
-        processed_indices = []
-        # print(f"Loading documents from offset {offset} to {offset+chunk_size}")
-        documents = load_documents(csv_path=csv_path, offset=offset, chunk_size=chunk_size)
-        nodes = chunk_documents(documents, processed_indices, chunk_size=256, chunk_overlap=128)
-        # print(f"Loaded {len(nodes)} nodes")
-
-        idx = 0
+        start_time = time.time()
+        nodes, processed_indices = pool.apply(process_chunk, [(csv_path, offset, chunk_size, 128, lock)])
+        
+        qdrantDB.upload_vectors(collection_name=COLLECTION_NAME, nodes=nodes)
         tmp_nodes = []
+        idx = 0
         for i, node in enumerate(nodes):
             tmp_nodes.append(node)
 
             if i == processed_indices[idx] - 1:
-                # qdrantDB.upload_vectors(collection_name=COLLECTION_NAME, nodes=[node])
-                save_checkpoint(node.metadata["id"], node.metadata["source"])
-                # print(f"Processed node {i} with ID {node.metadata['id']}")
+                # qdrantDB.upload_vectors(collection_n ame=COLLECTION_NAME, nodes=tmp_nodes)
+                save_checkpoint(node.metadata["id"], node.metadata["source"], lock)
                 idx += 1
                 tmp_nodes = []
+        end_time = time.time()
 
-        if len(tmp_nodes) > 0:
-            save_checkpoint(node.metadata["id"], node.metadata["source"])
-            # print(f"Processed node {i} with ID {node.metadata['id']}")
-        
+        print(f"Chunk processed in {end_time - start_time:.2f} seconds")
+        break
+
+    pool.close()
+    pool.join()
+
     # qdrantDB.close()
     print("All documents are chunked and uploaded to Qdrant successfully!")
