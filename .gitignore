@@ -4,3 +4,6 @@ data.csv
 cleaned_arxiv.csv
 *.rar
 *.json
+*.pyc
+.env
+test.ipynb
