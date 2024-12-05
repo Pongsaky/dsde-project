@@ -4,75 +4,148 @@ from llama_index.core.node_parser import (
     TokenTextSplitter,
 )
 from llama_index.core.schema import BaseNode
+
 from sentence_transformers import SentenceTransformer
-
 from src.database.qdrant import QdrantVectorDB
-from src.summarization.summarization import LLMSummarization
 
+import pandas as pd
 import os
 from dotenv import load_dotenv
+import hashlib
+import json
+import tqdm
+from multiprocessing import Pool, cpu_count, Manager, Lock
+import time
 
 load_dotenv()
 
-def load_documents() -> List[Document]:
-    DIR_PATH = "./AFAST_Content"
-    SUMMARIZE_PATH = os.path.join(DIR_PATH, "summarize")
+CHECKPOINT_FILE = "checkpoints.json"
+column_names = ["id", 'title', 'abstract', 'authors', 'category', 'year', 'source', 'references']
+
+def load_checkpoints():
+    if os.path.exists(CHECKPOINT_FILE):
+        with open(CHECKPOINT_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def generate_hash(doc_id, source):
+    return hashlib.sha256(f"{source}_{doc_id}".encode()).hexdigest()
+
+def save_checkpoint(doc_id, source, lock):
+    with lock:
+        checkpoints = load_checkpoints()
+        doc_hash = generate_hash(doc_id, source)
+        checkpoints[doc_hash] = True
+        with open(CHECKPOINT_FILE, "w") as f:
+            json.dump(checkpoints, f)
+
+def normalize_id(id: str):
+    if id.endswith(".0"):
+        return id[:-2]
+    return id
+
+def initial_offset(csv_path: str):
+    checkpoints = load_checkpoints()
+    df = pd.read_csv(csv_path)
+
+    filterd_df = df[~df.apply(lambda row: generate_hash(normalize_id(str(row["id"])), row["source"]) in checkpoints, axis=1)].reset_index(drop=True)
+    offset = len(df) - len(filterd_df)
+    # Clear variable to save memory
+    del df
+    del filterd_df
+
+    return offset
+
+def load_documents(csv_path: str, offset:int, chunk_size:int) -> List[Document]:
+    if not csv_path.endswith(".csv"):
+        AssertionError("Please provide a valid csv file")
+        return []
+
+    # Load checkpoints
+    checkpoints = load_checkpoints()
+    df = pd.read_csv(csv_path, skiprows=offset+1, nrows=chunk_size, names=column_names)
 
     documents = []
 
-    # Switch the split character based on the OS
-    split_char = "\\" if os.name == "nt" else "/"
-
-    for root, _, files in os.walk(SUMMARIZE_PATH):
-        if files:
-            for file in files:
-                if file.endswith(".txt"):
-                    title = root.split(split_char)[-1]
-                    part = file.split(".")[0].split(" ")[-1].replace("EP", "")
-                    with open(os.path.join(root, file), "r",  encoding='utf-8') as f:
-                        text = f.read()
-
-                    doc = Document(
-                        text=text,
-                        metadata={
-                            "title": title,
-                            "part": part,
-                            "instructor": "ผศ.ดร.ธรรณพ อารีพรรค",
-                            "link": "https://pmdacademy.teachable.com/p/from-nlp-to-llm",
-                        },
-                    )
-
-                    documents.append(doc)
+    filterd_df = df[~df.apply(lambda row: generate_hash(row["id"], row["source"]) in checkpoints, axis=1)]
+    for _, row in filterd_df.iterrows():
+        doc = Document(
+            text=row["abstract"],
+            metadata={
+                "id": row["id"],
+                "title": row["title"],
+                "source": row["source"],
+            },
+        )
+        documents.append(doc)
 
     return documents
 
-def chunk_documents(documents, chunk_size:int=1024, chunk_overlap:int=512) -> List[BaseNode]:
-    text_parser = TokenTextSplitter.from_defaults(chunk_overlap=chunk_overlap, chunk_size=chunk_size)
-    nodes = text_parser.get_nodes_from_documents(documents, show_progress=True)
+def chunk_documents(documents: List[Document], processed_indices:List[int], chunk_size:int=1024, chunk_overlap:int=256) -> List[BaseNode]:
+    text_parser = TokenTextSplitter.from_defaults(chunk_overlap=chunk_overlap,  chunk_size=chunk_size)
+    # nodes = text_parser.get_nodes_from_documents(documents, show_progress=True)
+
+    nodes = []
+    count_node = 0
+    for doc in documents:
+        for node in text_parser.get_nodes_from_documents([doc]):
+            nodes.append(node)
+            count_node += 1
+        processed_indices.append(count_node)
 
     return nodes
 
+def process_chunk(args):
+    csv_path, offset, chunk_size, chunk_overlap, lock = args
+    documents = load_documents(csv_path=csv_path, offset=offset, chunk_size=chunk_size)
+    processed_indices = []
+    nodes = chunk_documents(documents, processed_indices, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    return nodes, processed_indices
+
 if __name__ == "__main__":
-    llm_utils = LLMSummarization(
-        model="typhoon-instruct",
-        api_key=os.getenv("OPENTYPHOON_API_KEY"),
-        base_url="https://api.opentyphoon.ai/v1",
-        max_tokens=4096,
-        temperature=0.4,
-        isAzure=False,
-    )
 
-    documents = load_documents()
-    nodes = chunk_documents(documents)
+    csv_path = "combined_data.csv"
 
-    embedding_model = SentenceTransformer(model_name_or_path="model_weight/BAAI_bge_m3")
-    qdrantDB = QdrantVectorDB(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_API"), embedding_model=embedding_model, timeout=100)
+    document_length = 888907
+    init_offset = initial_offset(csv_path=csv_path)
+    chunk_size = 128
 
-    # Create a new collection with the name and dimension 1024
-    COLLECTION_NAME = "AFAST_Summarize_Content"
-    EMBEDDING_SIZE = 1024
-    qdrantDB.recreate_collection(collection_name=COLLECTION_NAME,)
-    qdrantDB.upload_vectors(collection_name=COLLECTION_NAME, nodes=nodes)
+    COLLECTION_NAME = "DSDE-project-local-embedding"
+    local_embedding_model = SentenceTransformer("BAAI/bge-m3") 
 
-    qdrantDB.close()
+    print(f"Initial offset: {init_offset}")
+
+    qdrantDB = QdrantVectorDB(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_API_KEY"), embedding_model=local_embedding_model, timeout=100)
+    qdrantDB.recreate_collection(collection_name=COLLECTION_NAME)
+
+    manager = Manager()
+    lock = manager.Lock()
+    # processes = cpu_count()
+    processes = 6 # Model size = 4 GB
+    pool = Pool(processes)
+
+    for offset in tqdm.tqdm(range(init_offset, document_length, chunk_size)):
+        start_time = time.time()
+        nodes, processed_indices = pool.apply(process_chunk, [(csv_path, offset, chunk_size, 128, lock)])
+        
+        qdrantDB.upload_vectors(collection_name=COLLECTION_NAME, nodes=nodes)
+        tmp_nodes = []
+        idx = 0
+        for i, node in enumerate(nodes):
+            tmp_nodes.append(node)
+
+            if i == processed_indices[idx] - 1:
+                # qdrantDB.upload_vectors(collection_n ame=COLLECTION_NAME, nodes=tmp_nodes)
+                save_checkpoint(node.metadata["id"], node.metadata["source"], lock)
+                idx += 1
+                tmp_nodes = []
+        end_time = time.time()
+
+        print(f"Chunk processed in {end_time - start_time:.2f} seconds")
+        break
+
+    pool.close()
+    pool.join()
+
+    # qdrantDB.close()
     print("All documents are chunked and uploaded to Qdrant successfully!")

@@ -1,6 +1,13 @@
 data/*
 .DS_Store
+# CSV file
 data.csv
+combined_data.csv
 cleaned_arxiv.csv
+scopus_unexplode_data.csv
+
 *.rar
 *.json
+*.pyc
+.env
+test.ipynb

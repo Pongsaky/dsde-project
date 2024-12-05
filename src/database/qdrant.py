@@ -1,6 +1,6 @@
 from qdrant_client import QdrantClient, models
 from llama_index.core.schema import BaseNode
-from sentence_transformers import SentenceTransformer
+from ..embedding_model import GeminiEmbedding
 
 from typing import List
 from dotenv import load_dotenv
@@ -12,7 +12,7 @@ from ..interface.vectorDBInterface import VectorDBInterface
 load_dotenv()
 
 class QdrantVectorDB(VectorDBInterface):
-    def __init__(self, url: str, api_key: str, timeout: int = 100, embedding_model: SentenceTransformer=None, dimension: int=None):
+    def __init__(self, url: str, api_key: str, embedding_model: GeminiEmbedding, timeout: int = 100,  dimension: int=None):
         """
             A class to interact with a Qdrant vector database, providing functionalities to manage collections,
             upload vectors, and perform searches within the collections.
@@ -25,9 +25,10 @@ class QdrantVectorDB(VectorDBInterface):
         self.embedding_model = embedding_model
 
         if (dimension is None):
-            self.dimension = embedding_model.encode("dummy").shape[0]
+            self.dimension = len(self.embedding_model.get_embedding("dummy"))
         else :
             self.dimension = dimension
+
 
     def recreate_collection(self, collection_name: str) -> None:
         """
@@ -65,13 +66,18 @@ class QdrantVectorDB(VectorDBInterface):
         """
             Uploads vectors to a specified collection.
         """
+        content_list = []
+        for node in nodes:
+            content_list.append(node.get_content())
+
+        vectors = self.embedding_model.get_embedding(content_list)
          
         self.client.upload_points(
             collection_name=collection_name,
             points=[
                 models.PointStruct(
                     id=idx,
-                    vector=self.embedding_model.encode(node.get_content()).tolist(),
+                    vector=vectors[idx],
                     payload=dict(node.metadata, **{"content": node.get_content()}),
                 )
                 for idx, node in enumerate(nodes)
@@ -84,7 +90,7 @@ class QdrantVectorDB(VectorDBInterface):
         """
         data = self.client.search(
             collection_name=collection_name,
-            query_vector=self.embedding_model.encode(query).tolist(),
+            query_vector=self.embedding_model.embedding_model([query]),
             limit=top_k,
         )
 
