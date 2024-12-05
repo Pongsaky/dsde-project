@@ -5,8 +5,8 @@ from llama_index.core.node_parser import (
 )
 from llama_index.core.schema import BaseNode
 
-from sentence_transformers import SentenceTransformer
 from src.database.qdrant import QdrantVectorDB
+from ..embedding_model import GeminiEmbedding
 
 import pandas as pd
 import os
@@ -111,11 +111,12 @@ if __name__ == "__main__":
     chunk_size = 128
 
     COLLECTION_NAME = "DSDE-project-local-embedding"
-    local_embedding_model = SentenceTransformer("BAAI/bge-m3") 
+    # local_embedding_model = SentenceTransformer("BAAI/bge-m3")
+    embedding_model = GeminiEmbedding()
 
     print(f"Initial offset: {init_offset}")
 
-    qdrantDB = QdrantVectorDB(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_API_KEY"), embedding_model=local_embedding_model, timeout=100)
+    qdrantDB = QdrantVectorDB(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_API_KEY"), embedding_model=embedding_model, timeout=100)
     qdrantDB.recreate_collection(collection_name=COLLECTION_NAME)
 
     manager = Manager()
