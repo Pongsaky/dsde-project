@@ -10,10 +10,11 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import HumanMessage, AIMessage
 from llama_index.core.text_splitter import TokenTextSplitter
 from dotenv import load_dotenv
+from src.interface import ChatInterface
 
 load_dotenv()
 
-class LLMSummarization:
+class Chat(ChatInterface):
     def __init__(self, model:str, api_key:str, base_url:str, max_tokens:int = None, temperature:float = None, isAzure:bool = False):
 
         if isAzure is False:
