@@ -1,13 +1,11 @@
-from email import message
 from typing import List
+from altair import value
 from langchain_core.prompts import (
     ChatPromptTemplate,
     HumanMessagePromptTemplate,
-    MessagesPlaceholder,
     SystemMessagePromptTemplate,
 )
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import START, MessagesState, StateGraph
@@ -21,7 +19,10 @@ import uuid
 
 from src.database.qdrant import QdrantVectorDB
 from src.embedding_model import GeminiEmbedding
-from app.models.GraphData import Node
+from app.models.GraphData import Node, GraphLink, GraphData, GraphNode
+import json
+
+from langchain_core.messages import RemoveMessage
 
 load_dotenv()
 
@@ -151,7 +152,7 @@ class Chat(ChatInterface):
         output = self.app.invoke({"messages": input_messages}, config=config)
 
         for message in output["messages"]:
-            print(message.pretty_print())  
+            print(message.pretty_print())
 
     def detect_additional_data(self, user_input: UserInput) -> bool:
         config = {"configurable": {"thread_id": user_input.chat_id}}
@@ -188,7 +189,11 @@ class Chat(ChatInterface):
         return [message for message in state["messages"]]
 
     def clear_chat(self, chat_id: str):
-        pass
+        config = {"configurable": {"thread_id": chat_id}}
+
+        messages = self.app.get_state(config=config).values["messages"]
+        for message in messages:
+            self.app.update_state(config=config, values={"messages": RemoveMessage(id=message.id)})
 
     def get_system_template_prompt(self):
         return self.system_template_prompt 
@@ -197,14 +202,6 @@ class Chat(ChatInterface):
         chat_prompt_template = ChatPromptTemplate.from_messages(
             [
                 SystemMessagePromptTemplate.from_template(
-                    # """
-                    # You are summarization assiatant AI. 
-                    # Please help me summarize with the words correctly according to the context by answering in Thai language on {topic} Topic.
-                    # Think step by step and be concise.
-                    # Don't Forget the RULES:
-                    # - Be concise and to the point.
-                    # - Length must not exceed 500 characters. 
-                    # """
                     text_propmt
                 )
             ]
@@ -246,11 +243,23 @@ class Chat(ChatInterface):
     def format_nodes_to_text(self, nodes: List[Node]) -> str:
         paper_data = ""
         for node in nodes:
-            paper_data += f"""ID : {node.id}
-Title: {node.title}
-Year: {node.year}
-Authors: {", ".join(node.authors)}
-Source: {node.source}
-Abstract: {node.abstract}"""
-
+            node_json = json.dumps(node.model_dump(), indent=4)
+            paper_data += f"{node_json}\n"
         return paper_data
+
+    def format_chat_json_to_graph_link(self, chat_json_response: str) -> List[GraphLink]:
+        """
+        Example of chat_json_response
+        ```json
+        [
+            {
+                "source": "some_id",
+                "target": "some_id",
+                "index": 0
+            }
+        ]
+        ```
+        """
+        links_data = json.loads(chat_json_response)
+        graph_links = [GraphLink(**link) for link in links_data]
+        return graph_links
