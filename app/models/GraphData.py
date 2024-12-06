@@ -12,12 +12,8 @@ class Node(BaseModel):
     type: NodeType
     year: int
     abstract: str
-    authors: List[str]  # Updated field name
+    authors: List[str]
     source: str
-
-class GraphNode(BaseModel):
-    id: str
-    data: Node
 
 class GraphLink(BaseModel):
     source: str
@@ -25,5 +21,5 @@ class GraphLink(BaseModel):
     index: int
 
 class GraphData(BaseModel): 
-    nodes: List[GraphNode]
+    nodes: List[Node]
     links: List[GraphLink]
