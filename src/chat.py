@@ -5,6 +5,8 @@ from langchain_core.prompts import (
     HumanMessagePromptTemplate,
     SystemMessagePromptTemplate,
 )
+
+from langchain_core.messages import SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.memory import MemorySaver
@@ -199,10 +201,12 @@ class Chat(ChatInterface):
         return self.system_template_prompt 
 
     def set_system_template_prompt(self, text_propmt: str):
+        normalize_text_prompt = self.normalize_text_prompt(text_propmt)
+
         chat_prompt_template = ChatPromptTemplate.from_messages(
             [
-                SystemMessagePromptTemplate.from_template(
-                    text_propmt
+                SystemMessage(
+                    normalize_text_prompt
                 )
             ]
         )
@@ -213,10 +217,12 @@ class Chat(ChatInterface):
         return self.chat_template_prompt
 
     def set_chat_template_prompt(self, text_prompt: str):
+        normalized_text_prompt = self.normalize_text_prompt(text_prompt)
+
         chat_prompt_template = ChatPromptTemplate.from_messages(
             [
                 HumanMessagePromptTemplate.from_template(
-                    text_prompt
+                    normalized_text_prompt
                 )
             ]
         )
@@ -227,15 +233,21 @@ class Chat(ChatInterface):
         return self.detect_additional_data_template
 
     def set_detect_additional_data_template(self, text_prompt: str): 
+        normalized_text_prompt = self.normalize_text_prompt(text_prompt) 
         chat_prompt_template = ChatPromptTemplate.from_messages(
             [
                 HumanMessagePromptTemplate.from_template(
-                    text_prompt
+                    normalized_text_prompt
                 )
             ]
         )
 
         self.detect_additional_data_template = chat_prompt_template 
+
+    def normalize_text_prompt(self, text_prompt: str) -> str:
+        # Remove \n, \t, and special characters from the text prompt
+        normalized_prompt = text_prompt.replace("\n", " ").replace("\t", " ").strip()
+        return normalized_prompt
 
     def get_model(self):
         return self.model
