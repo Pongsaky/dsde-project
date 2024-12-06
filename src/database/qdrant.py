@@ -71,7 +71,11 @@ class QdrantVectorDB(VectorDBInterface):
             content_list.append(node.get_content())
 
         vectors = self.embedding_model.get_embedding(content_list)
-         
+        # for idx, vector in enumerate(vectors):
+        #     print(f"{idx} : {content_list} with {vector[:2]}")
+        print(len(content_list))
+        print(len(vectors))
+
         self.client.upload_points(
             collection_name=collection_name,
             points=[
