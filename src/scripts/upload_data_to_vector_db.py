@@ -14,7 +14,6 @@ from dotenv import load_dotenv
 import hashlib
 import json
 import tqdm
-from multiprocessing import Pool, cpu_count, Manager, Lock
 import time
 
 load_dotenv()
@@ -31,13 +30,12 @@ def load_checkpoints():
 def generate_hash(doc_id, source):
     return hashlib.sha256(f"{source}_{doc_id}".encode()).hexdigest()
 
-def save_checkpoint(doc_id, source, lock):
-    with lock:
-        checkpoints = load_checkpoints()
-        doc_hash = generate_hash(doc_id, source)
-        checkpoints[doc_hash] = True
-        with open(CHECKPOINT_FILE, "w") as f:
-            json.dump(checkpoints, f)
+def save_checkpoint(doc_id, source):
+    checkpoints = load_checkpoints()
+    doc_hash = generate_hash(doc_id, source)
+    checkpoints[doc_hash] = True
+    with open(CHECKPOINT_FILE, "w") as f:
+        json.dump(checkpoints, f)
 
 def normalize_id(id: str):
     if id.endswith(".0"):
@@ -108,45 +106,42 @@ if __name__ == "__main__":
 
     document_length = 888907
     init_offset = initial_offset(csv_path=csv_path)
-    chunk_size = 128
+    chunk_size = 20
 
-    COLLECTION_NAME = "DSDE-project-local-embedding"
+    COLLECTION_NAME = "DSDE-project-embedding"
     # local_embedding_model = SentenceTransformer("BAAI/bge-m3")
     embedding_model = GeminiEmbedding()
 
     print(f"Initial offset: {init_offset}")
 
-    qdrantDB = QdrantVectorDB(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_API_KEY"), embedding_model=embedding_model, timeout=100)
+    qdrantDB = QdrantVectorDB(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_API_KEY"), embedding_model=embedding_model, timeout=100, dimension=768)
     qdrantDB.recreate_collection(collection_name=COLLECTION_NAME)
 
-    manager = Manager()
-    lock = manager.Lock()
-    # processes = cpu_count()
-    processes = 6 # Model size = 4 GB
-    pool = Pool(processes)
 
     for offset in tqdm.tqdm(range(init_offset, document_length, chunk_size)):
         start_time = time.time()
-        nodes, processed_indices = pool.apply(process_chunk, [(csv_path, offset, chunk_size, 128, lock)])
-        
-        qdrantDB.upload_vectors(collection_name=COLLECTION_NAME, nodes=nodes)
+        documents = load_documents(csv_path=csv_path, offset=offset, chunk_size=chunk_size)
+        processed_indices = []
+        nodes = chunk_documents(documents, processed_indices, chunk_size=256, chunk_overlap=100)
+
+        for node in nodes:
+            vector = embedding_model.get_embedding(node.get_content())
+            print(vector[0][:2])
+
+        # qdrantDB.upload_vectors(collection_name=COLLECTION_NAME, nodes=nodes)
         tmp_nodes = []
         idx = 0
         for i, node in enumerate(nodes):
             tmp_nodes.append(node)
 
             if i == processed_indices[idx] - 1:
-                # qdrantDB.upload_vectors(collection_n ame=COLLECTION_NAME, nodes=tmp_nodes)
-                save_checkpoint(node.metadata["id"], node.metadata["source"], lock)
+                save_checkpoint(node.metadata["id"], node.metadata["source"])
                 idx += 1
                 tmp_nodes = []
         end_time = time.time()
 
         print(f"Chunk processed in {end_time - start_time:.2f} seconds")
         break
-
-    pool.close()
-    pool.join()
-
-    # qdrantDB.close()
+ 
+    qdrantDB.close()
     print("All documents are chunked and uploaded to Qdrant successfully!")
