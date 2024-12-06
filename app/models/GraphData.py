@@ -25,6 +25,6 @@ class GraphLink(BaseModel):
     strength: float
     index: int
 
-class GraphData(BaseModel):
+class GraphData(BaseModel): 
     nodes: List[GraphNode]
     links: List[GraphLink]
