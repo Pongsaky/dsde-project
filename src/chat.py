@@ -104,6 +104,8 @@ class Chat(ChatInterface):
         for message in output["messages"]:
             print(message.pretty_print())
 
+        return output["messages"][-1]
+
     def continue_chat(self, user_input: UserInput) -> APIResponse:
         config = {"configurable": {"thread_id": user_input.chat_id}}
         user_message = user_input.message
@@ -155,6 +157,8 @@ class Chat(ChatInterface):
         for message in output["messages"]:
             print(message.pretty_print())
 
+        return output["messages"][-1]
+
     def detect_additional_data(self, user_input: UserInput) -> bool:
         config = {"configurable": {"thread_id": user_input.chat_id}}
         user_message = user_input.message
@@ -183,11 +187,11 @@ class Chat(ChatInterface):
         for message in output["messages"]:
             print(message.pretty_print())
 
+        return output["messages"][-1]
+
     def get_chat_history(self, chat_id: str) -> List[str]:
         config = {"configurable": {"thread_id": chat_id}}
         state = self.app.get_state(config=config).values
-
-        print(state)
 
         return [message for message in state["messages"]]
 
@@ -195,7 +199,6 @@ class Chat(ChatInterface):
         config = {"configurable": {"thread_id": chat_id}}
 
         state = self.app.get_state(config=config).values
-        print(state)
         for message in state["messages"]:
             self.app.update_state(config=config, values={"messages": RemoveMessage(id=message.id)})
 
