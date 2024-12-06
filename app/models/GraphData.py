@@ -22,7 +22,6 @@ class GraphNode(BaseModel):
 class GraphLink(BaseModel):
     source: str
     target: str
-    strength: float
     index: int
 
 class GraphData(BaseModel): 

@@ -246,12 +246,11 @@ class Chat(ChatInterface):
     def format_nodes_to_text(self, nodes: List[Node]) -> str:
         paper_data = ""
         for node in nodes:
-            paper_data += f"""
-                Title: {node.title}
-                Year: {node.year}
-                Authors: {", ".join(node.authors)}
-                Source: {node.source}
-                Abstract: {node.abstract}
-            """
+            paper_data += f"""ID : {node.id}
+Title: {node.title}
+Year: {node.year}
+Authors: {", ".join(node.authors)}
+Source: {node.source}
+Abstract: {node.abstract}"""
 
         return paper_data
