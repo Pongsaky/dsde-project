@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 from qdrant_client.models import ScoredPoint
 
 from ..interface.vectorDBInterface import VectorDBInterface
+from app.models.GraphData import Node, NodeType
+import pandas as pd
 
 load_dotenv()
 
@@ -31,6 +33,9 @@ class QdrantVectorDB(VectorDBInterface):
             self.dimension = len(self.embedding_model.get_embedding("dummy"))
         else :
             self.dimension = dimension
+
+        self.df = pd.read_csv("combined_data.csv")
+        self.df["id"] = self.df["id"].astype(str)
 
 
     def recreate_collection(self, collection_name: str) -> None:
@@ -93,7 +98,7 @@ class QdrantVectorDB(VectorDBInterface):
         """
         data = self.client.search(
             collection_name=collection_name,
-            query_vector=self.embedding_model.embedding_model([query]),
+            query_vector=self.embedding_model.get_embedding([query])[0],
             limit=top_k,
         )
 
@@ -137,3 +142,29 @@ class QdrantVectorDB(VectorDBInterface):
             Closes the connection to the Qdrant database.
         """
         self.client.close()
+
+    def get_paper_info(self, search_result: List[ScoredPoint]):
+        paper_info = {}
+        for point in search_result:
+            identifier = str(point.payload.get("id")) + '_' + point.payload.get("source")
+            if identifier in paper_info:
+                continue
+            paper_id = str(point.payload.get("id"))
+            paper = self.df[self.df["id"] == paper_id].to_dict(orient="records")
+
+            if len(paper) == 0:
+                continue
+
+            paper_node = Node(
+                id=paper[0].get("id"),
+                title=paper[0].get("title"),
+                type=NodeType.paper,
+                year=int(paper[0].get("year")),
+                abstract=paper[0].get("abstract"),
+                authors=paper[0].get("authors").split(","),
+                source=paper[0].get("source"), 
+            )
+
+            paper_info[identifier] = paper_node
+        
+        return list(paper_info.values())
