@@ -160,7 +160,7 @@ class QdrantVectorDB(VectorDBInterface):
                 continue
 
             paper_node = Node(
-                id=paper[0].get("id"),
+                id=identifier,
                 title=paper[0].get("title"),
                 type=NodeType.paper,
                 year=int(paper[0].get("year")),
