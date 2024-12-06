@@ -5,6 +5,7 @@ data.csv
 combined_data.csv
 cleaned_arxiv.csv
 scopus_unexplode_data.csv
+arxiv_dataset.csv
 
 *.rar
 *.json
