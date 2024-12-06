@@ -8,14 +8,6 @@ class ChatInterface(ABC):
         pass
 
     @abstractmethod
-    def init_app(self):
-        pass
-
-    @abstractmethod
-    def call_model(self, state: MessagesState):
-        pass
-
-    @abstractmethod
     def initial_chat(self, user_input: UserInput):
         pass
 

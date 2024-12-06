@@ -1,13 +1,10 @@
 from typing import List
-from altair import value
 from langchain_core.prompts import (
     ChatPromptTemplate,
     HumanMessagePromptTemplate,
-    SystemMessagePromptTemplate,
 )
 
 from langchain_core.messages import SystemMessage
-from langchain_core.output_parsers import StrOutputParser
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import START, MessagesState, StateGraph
@@ -21,7 +18,7 @@ import uuid
 
 from src.database.qdrant import QdrantVectorDB
 from src.embedding_model import GeminiEmbedding
-from app.models.GraphData import Node, GraphLink, GraphData, GraphNode
+from app.models.GraphData import Node, GraphLink, GraphData
 import json
 
 from langchain_core.messages import RemoveMessage
@@ -42,20 +39,12 @@ class Chat(ChatInterface):
         self.qdrant_clinet = QdrantVectorDB(url="http://localhost:6333", embedding_model=self.embedding_model)
         self.collection_name = "DSDE-project-embedding"
 
-        # self.text_parser = StrOutputParser()
-        self.system_template_prompt = None
-        self.chat_template_prompt = None
-        self.detect_additional_data_template = None
-
         self.workflow = StateGraph(state_schema=MessagesState)
-        self.memory_saver = MemorySaver()
-        self.app = None
-
-    def init_app(self):
         self.workflow.add_node("model", self.call_model)
         self.workflow.add_edge(START, "model")
 
-        self.app = self.workflow.compile(checkpointer=self.memory_saver)
+        self.memory = MemorySaver()
+        self.app = self.workflow.compile(checkpointer=self.memory)
 
     def call_model(self, state: MessagesState):
         system_template_prompt = self.get_system_template_prompt()
@@ -70,13 +59,18 @@ class Chat(ChatInterface):
         chat_template_prompt = self.get_chat_template_prompt()
 
         # TODO Retrieve the paper data from the vectorDB and format it as a message
-        search_result = self.qdrant_clinet.get_search_results(self.collection_name, user_message, top_k=10)
+        search_result = self.qdrant_clinet.get_search_results(self.collection_name, user_message, top_k=8)
         nodes : List[Node] = self.qdrant_clinet.get_paper_info(search_result=search_result)
         paper_data = self.format_nodes_to_text(nodes)
         input_messages = chat_template_prompt.format_messages(paper_data=paper_data)
 
-        thread_id = str(uuid.uuid4())
-        config = {"configurable": {"thread_id": thread_id}}
+        chat_id = None
+        if user_input.chat_id is not None:
+            chat_id = str(uuid.uuid4())
+        else:
+            chat_id = user_input.chat_id
+
+        config = {"configurable": {"thread_id": chat_id}}
 
         output = self.app.invoke({"messages": input_messages}, config=config)
         print(output["messages"])
@@ -84,7 +78,7 @@ class Chat(ChatInterface):
         # TODO Convert JSON output to message and GraphData
 
         return APIResponse(
-            chat_id=thread_id, message=output["messages"][-1], newGraph=None
+            chat_id=chat_id, message=output["messages"][-1], newGraph=None
         )
     
     def test_initial_chat(self, user_input: UserInput):
@@ -92,13 +86,18 @@ class Chat(ChatInterface):
         chat_template_prompt = self.get_chat_template_prompt()
 
         # TODO Retrieve the paper data from the vectorDB and format it as a message
-        search_result = self.qdrant_clinet.get_search_results(self.collection_name, user_message, top_k=10)
+        search_result = self.qdrant_clinet.get_search_results(self.collection_name, user_message, top_k=8)
         nodes : List[Node] = self.qdrant_clinet.get_paper_info(search_result=search_result)
         paper_data = self.format_nodes_to_text(nodes)
         input_messages = chat_template_prompt.format_messages(paper_data=paper_data)
 
-        thread_id = str(uuid.uuid4())
-        config = {"configurable": {"thread_id": thread_id}}
+        chat_id = None
+        if user_input.chat_id is not None:
+            chat_id = user_input.chat_id
+        else:
+            chat_id = str(uuid.uuid4())
+
+        config = {"configurable": {"thread_id": chat_id}}
 
         output = self.app.invoke({"messages": input_messages}, config=config)
         
@@ -188,13 +187,16 @@ class Chat(ChatInterface):
         config = {"configurable": {"thread_id": chat_id}}
         state = self.app.get_state(config=config).values
 
+        print(state)
+
         return [message for message in state["messages"]]
 
     def clear_chat(self, chat_id: str):
         config = {"configurable": {"thread_id": chat_id}}
 
-        messages = self.app.get_state(config=config).values["messages"]
-        for message in messages:
+        state = self.app.get_state(config=config).values
+        print(state)
+        for message in state["messages"]:
             self.app.update_state(config=config, values={"messages": RemoveMessage(id=message.id)})
 
     def get_system_template_prompt(self):
