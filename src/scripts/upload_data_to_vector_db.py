@@ -14,13 +14,16 @@ from dotenv import load_dotenv
 import hashlib
 import json
 import tqdm
-from multiprocessing import Pool, cpu_count, Manager, Lock
 import time
+import logging
 
 load_dotenv()
 
 CHECKPOINT_FILE = "checkpoints.json"
 column_names = ["id", 'title', 'abstract', 'authors', 'category', 'year', 'source', 'references']
+
+# Configure logging
+logging.basicConfig(filename='process.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def load_checkpoints():
     if os.path.exists(CHECKPOINT_FILE):
@@ -28,25 +31,26 @@ def load_checkpoints():
             return json.load(f)
     return {}
 
+def save_checkpoints(checkpoints):
+    with open(CHECKPOINT_FILE, "w") as f:
+        json.dump(checkpoints, f) 
+    logging.info("Checkpoints saved to file")
+
 def generate_hash(doc_id, source):
     return hashlib.sha256(f"{source}_{doc_id}".encode()).hexdigest()
 
-def save_checkpoint(doc_id, source, lock):
-    with lock:
-        checkpoints = load_checkpoints()
-        doc_hash = generate_hash(doc_id, source)
-        checkpoints[doc_hash] = True
-        with open(CHECKPOINT_FILE, "w") as f:
-            json.dump(checkpoints, f)
+def save_checkpoint(doc_id, source, checkpoints):
+    doc_hash = generate_hash(doc_id, source)
+    checkpoints[doc_hash] = True
+    logging.info(f"Checkpoint saved for document ID: {doc_id}, source: {source}")
 
 def normalize_id(id: str):
     if id.endswith(".0"):
         return id[:-2]
     return id
 
-def initial_offset(csv_path: str):
+def initial_offset(df: pd.DataFrame):
     checkpoints = load_checkpoints()
-    df = pd.read_csv(csv_path)
 
     filterd_df = df[~df.apply(lambda row: generate_hash(normalize_id(str(row["id"])), row["source"]) in checkpoints, axis=1)].reset_index(drop=True)
     offset = len(df) - len(filterd_df)
@@ -56,14 +60,8 @@ def initial_offset(csv_path: str):
 
     return offset
 
-def load_documents(csv_path: str, offset:int, chunk_size:int) -> List[Document]:
-    if not csv_path.endswith(".csv"):
-        AssertionError("Please provide a valid csv file")
-        return []
-
-    # Load checkpoints
-    checkpoints = load_checkpoints()
-    df = pd.read_csv(csv_path, skiprows=offset+1, nrows=chunk_size, names=column_names)
+def load_documents(df : pd.DataFrame, offset:int, chunk_size:int, checkpoints) -> List[Document]:
+    df = df.iloc[offset:offset+chunk_size]
 
     documents = []
 
@@ -95,58 +93,58 @@ def chunk_documents(documents: List[Document], processed_indices:List[int], chun
 
     return nodes
 
-def process_chunk(args):
-    csv_path, offset, chunk_size, chunk_overlap, lock = args
-    documents = load_documents(csv_path=csv_path, offset=offset, chunk_size=chunk_size)
+def process_chunk(offset, chunk_size, df, checkpoints, collection_name):
+    logging.info(f"Processing chunk with offset: {offset}")
+    
+    # Initialize QdrantVectorDB inside the worker function
+    documents = load_documents(df=df, offset=offset, chunk_size=chunk_size, checkpoints=checkpoints)
     processed_indices = []
-    nodes = chunk_documents(documents, processed_indices, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-    return nodes, processed_indices
+    nodes = chunk_documents(documents, processed_indices, chunk_size=512, chunk_overlap=128)
+    logging.info(f"Chunked {len(nodes)} nodes")
+    
+    qdrantDB.upload_vectors(collection_name=collection_name, nodes=nodes)
+    logging.info(f"Uploaded {len(nodes)} nodes to Qdrant")
+
+    idx = 0
+    for i, node in enumerate(nodes):
+        if i == processed_indices[idx] - 1:
+            save_checkpoint(node.metadata["id"], node.metadata["source"], checkpoints)
+            idx += 1
+
+    del documents
+    del nodes
+    logging.info(f"Finished processing chunk with offset: {offset}")
 
 if __name__ == "__main__":
 
     csv_path = "combined_data.csv"
 
     document_length = 888907
-    init_offset = initial_offset(csv_path=csv_path)
-    chunk_size = 128
+    df = pd.read_csv(csv_path)
+    init_offset = initial_offset(df=df)
+    chunk_size = 888907
 
-    COLLECTION_NAME = "DSDE-project-local-embedding"
-    # local_embedding_model = SentenceTransformer("BAAI/bge-m3")
+    COLLECTION_NAME = "DSDE-project-embedding"
     embedding_model = GeminiEmbedding()
 
     print(f"Initial offset: {init_offset}")
+    logging.info(f"Initial offset: {init_offset}")
 
-    qdrantDB = QdrantVectorDB(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_API_KEY"), embedding_model=embedding_model, timeout=100)
+    # qdrantDB = QdrantVectorDB(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_API_KEY"), embedding_model=embedding_model, timeout=100)
+    qdrantDB = QdrantVectorDB(url="http://localhost:6333", embedding_model=embedding_model, timeout=100)
     qdrantDB.recreate_collection(collection_name=COLLECTION_NAME)
+    logging.info("Qdrant collection created")
 
-    manager = Manager()
-    lock = manager.Lock()
-    # processes = cpu_count()
-    processes = 6 # Model size = 4 GB
-    pool = Pool(processes)
+    checkpoints = load_checkpoints()
 
     for offset in tqdm.tqdm(range(init_offset, document_length, chunk_size)):
         start_time = time.time()
-        nodes, processed_indices = pool.apply(process_chunk, [(csv_path, offset, chunk_size, 128, lock)])
-        
-        qdrantDB.upload_vectors(collection_name=COLLECTION_NAME, nodes=nodes)
-        tmp_nodes = []
-        idx = 0
-        for i, node in enumerate(nodes):
-            tmp_nodes.append(node)
-
-            if i == processed_indices[idx] - 1:
-                # qdrantDB.upload_vectors(collection_n ame=COLLECTION_NAME, nodes=tmp_nodes)
-                save_checkpoint(node.metadata["id"], node.metadata["source"], lock)
-                idx += 1
-                tmp_nodes = []
+        process_chunk(offset, chunk_size, df, checkpoints, COLLECTION_NAME)
         end_time = time.time()
+        logging.info(f"Chunk processed in {end_time - start_time:.2f} seconds")
 
-        print(f"Chunk processed in {end_time - start_time:.2f} seconds")
-        break
+    save_checkpoints(checkpoints)
+    qdrantDB.close()
 
-    pool.close()
-    pool.join()
-
-    # qdrantDB.close()
+    logging.info("All documents are chunked and uploaded to Qdrant successfully!")
     print("All documents are chunked and uploaded to Qdrant successfully!")

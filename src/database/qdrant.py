@@ -12,7 +12,7 @@ from ..interface.vectorDBInterface import VectorDBInterface
 load_dotenv()
 
 class QdrantVectorDB(VectorDBInterface):
-    def __init__(self, url: str, api_key: str, embedding_model: GeminiEmbedding, timeout: int = 100,  dimension: int=None):
+    def __init__(self, url: str, embedding_model: GeminiEmbedding, timeout: int = 100, api_key: str=None,  dimension: int=None):
         """
             A class to interact with a Qdrant vector database, providing functionalities to manage collections,
             upload vectors, and perform searches within the collections.
@@ -21,7 +21,10 @@ class QdrantVectorDB(VectorDBInterface):
                 client (QdrantClient): The client instance to communicate with the Qdrant database.
                 embedding_model (SetenceTransformer): The embedding model used to convert text to vectors.
         """
-        self.client = QdrantClient(url=url, api_key=api_key, timeout=timeout)
+        if api_key is None:
+            self.client = QdrantClient(url=url, timeout=timeout)
+        else:
+            self.client = QdrantClient(url=url, api_key=api_key, timeout=timeout)
         self.embedding_model = embedding_model
 
         if (dimension is None):
@@ -47,7 +50,7 @@ class QdrantVectorDB(VectorDBInterface):
             Creates a new collection if it does not already exist, based on the specified dimension.
         """
         
-        existing_collections = self.client.list_collections()
+        existing_collections = self.client.get_collections()
         
         if collection_name in existing_collections:
             print(f"Collection '{collection_name}' already exists. Skipping recreation.")
