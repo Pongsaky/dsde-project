@@ -1,5 +1,5 @@
+from email import message
 from typing import List
-from langchain_openai.chat_models import ChatOpenAI, AzureChatOpenAI
 from langchain_core.prompts import (
     ChatPromptTemplate,
     HumanMessagePromptTemplate,
@@ -7,172 +7,251 @@ from langchain_core.prompts import (
     SystemMessagePromptTemplate,
 )
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.messages import HumanMessage, AIMessage
-from llama_index.core.text_splitter import TokenTextSplitter
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import START, MessagesState, StateGraph
+
+from app.models.APIResponse import APIResponse
+from app.models.UserInput import UserInput
+
 from dotenv import load_dotenv
-from src.interface import ChatInterface
+from src.interface.ChatInterface import ChatInterface  # Updated import
+import uuid
+
+from src.database.qdrant import QdrantVectorDB
+from src.embedding_model import GeminiEmbedding
+from app.models.GraphData import Node
 
 load_dotenv()
 
 class Chat(ChatInterface):
-    def __init__(self, model:str, api_key:str, base_url:str, max_tokens:int = None, temperature:float = None, isAzure:bool = False):
-
-        if isAzure is False:
-            if max_tokens is None:
-                raise ValueError("max_tokens must be provided when isAzure is False")
-            if temperature is None:
-                raise ValueError("temperature must be provided when isAzure is False")
-
-        if isAzure:
-            self.llm = AzureChatOpenAI(
-                model=model,
-                api_key=api_key,
-                azure_endpoint=base_url,
-                api_version="2024-02-01"
-            )
-        else:
-            self.llm = ChatOpenAI(
-                model=model,
-                api_key=api_key,
-                base_url=base_url,
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
-        
-        self.text_parser = StrOutputParser()
-
-    def get_llm(self):
-        return self.llm
-
-    def get_summary_template(self, template_type: str):
-        if template_type == "leaf":
-            return ChatPromptTemplate.from_messages(
-                [
-                    SystemMessagePromptTemplate.from_template(
-                        """
-                        You are a summarization assistant AI. 
-                        Please summarize the text in Thai language on {topic} Topic.
-                        Be concise and to the point.
-                        Length must not exceed 500 characters.
-                        """
-                    ),
-                    MessagesPlaceholder(variable_name="chat_history"),
-                    HumanMessagePromptTemplate.from_template("{input}"),
-                ]
-            )
-        elif template_type == "cluster":
-            return ChatPromptTemplate.from_messages(
-                [
-                    SystemMessagePromptTemplate.from_template(
-                        """
-                        You are a summarization assistant AI. 
-                        Find the key points of the content in Thai language on {topic} Topic.
-                        Be concise and to the point.
-                        """
-                    ),
-                    MessagesPlaceholder(variable_name="chat_history"),
-                    HumanMessagePromptTemplate.from_template("{input}"),
-                ]
-            )
-        elif template_type == "root":
-            return ChatPromptTemplate.from_messages(
-                [
-                    SystemMessagePromptTemplate.from_template(
-                        """
-                        You are a summarization assistant AI. 
-                        Summarize the following text in Thai language.
-                        Follow the instructions below:
-                        1. Read the content.
-                        2. Summarize the text in Thai language using the JSON format:
-                        - Attention Grabber
-                        - Summary Part
-                        - Instructor
-                        - Target Audience
-                        - Course Benefits
-                        - Call to Action
-                        - Hashtags
-                        """
-                    ),
-                    MessagesPlaceholder(variable_name="chat_history"),
-                    HumanMessagePromptTemplate.from_template("{input}"),
-                ]
-            )
-
-    def add_chat_history(self, chat_history: list, AIText: str, HumanText: str):
-        chat_history.extend(
-            [HumanMessage(content=HumanText), AIMessage(content=AIText)]
+    def __init__(self):
+        self.model = ChatGoogleGenerativeAI(
+            model="gemini-1.5-pro",
+            temperature=0,
+            max_tokens=None,
+            timeout=None,
+            max_retries=2,
         )
-        return chat_history
 
-    def execute_chain(self, template: ChatPromptTemplate, input_data: dict, chat_history=[]) -> str:
-        chain = template | self.llm | self.text_parser
-        result = ""
+        self.embedding_model = GeminiEmbedding()
+        self.qdrant_clinet = QdrantVectorDB(url="http://localhost:6333", embedding_model=self.embedding_model)
+        self.collection_name = "DSDE-project-embedding"
 
-        # Check if 'text' exists in the input_data to split into chunks
-        if "text" in input_data:
-            text_parser = TokenTextSplitter.from_defaults(chunk_overlap=0, chunk_size=4096)
-            text_chunks = text_parser.split_text(text=input_data["text"])
+        # self.text_parser = StrOutputParser()
+        self.system_template_prompt = None
+        self.chat_template_prompt = None
+        self.detect_additional_data_template = None
 
-            # Process each text chunk
-            for chunk in text_chunks:
-                input_data["input"] = chunk
-                latest_chat_history = chat_history[-1:]
-                res = chain.invoke(
-                    {**input_data, "chat_history": latest_chat_history}
+        self.workflow = StateGraph(state_schema=MessagesState)
+        self.memory_saver = MemorySaver()
+        self.app = None
+
+    def init_app(self):
+        self.workflow.add_node("model", self.call_model)
+        self.workflow.add_edge(START, "model")
+
+        self.app = self.workflow.compile(checkpointer=self.memory_saver)
+
+    def call_model(self, state: MessagesState):
+        system_template_prompt = self.get_system_template_prompt()
+        system_prompt = system_template_prompt.format_messages()
+
+        messages = system_prompt + state["messages"]
+        response = self.model.invoke(messages)
+        return {"messages": response}
+
+    def initial_chat(self, user_input: UserInput) -> APIResponse:
+        user_message = user_input.message
+        chat_template_prompt = self.get_chat_template_prompt()
+
+        # TODO Retrieve the paper data from the vectorDB and format it as a message
+        search_result = self.qdrant_clinet.get_search_results(self.collection_name, user_message, top_k=10)
+        nodes : List[Node] = self.qdrant_clinet.get_paper_info(search_result=search_result)
+        paper_data = self.format_nodes_to_text(nodes)
+        input_messages = chat_template_prompt.format_messages(paper_data=paper_data)
+
+        thread_id = str(uuid.uuid4())
+        config = {"configurable": {"thread_id": thread_id}}
+
+        output = self.app.invoke({"messages": input_messages}, config=config)
+        print(output["messages"])
+
+        # TODO Convert JSON output to message and GraphData
+
+        return APIResponse(
+            chat_id=thread_id, message=output["messages"][-1], newGraph=None
+        )
+    
+    def test_initial_chat(self, user_input: UserInput):
+        user_message = user_input.message
+        chat_template_prompt = self.get_chat_template_prompt()
+
+        # TODO Retrieve the paper data from the vectorDB and format it as a message
+        search_result = self.qdrant_clinet.get_search_results(self.collection_name, user_message, top_k=10)
+        nodes : List[Node] = self.qdrant_clinet.get_paper_info(search_result=search_result)
+        paper_data = self.format_nodes_to_text(nodes)
+        input_messages = chat_template_prompt.format_messages(paper_data=paper_data)
+
+        thread_id = str(uuid.uuid4())
+        config = {"configurable": {"thread_id": thread_id}}
+
+        output = self.app.invoke({"messages": input_messages}, config=config)
+        
+        for message in output["messages"]:
+            print(message.pretty_print())
+
+    def continue_chat(self, user_input: UserInput) -> APIResponse:
+        config = {"configurable": {"thread_id": user_input.chat_id}}
+        user_message = user_input.message
+
+        # TODO Use LLM to detect does it require additional data from vectorDB
+        is_additional_data_required = self.detect_additional_data(user_input)
+
+        input_messages = None
+        if is_additional_data_required:
+            # TODO Retrieve the paper data from the vectorDB and format it as a message
+            search_result = self.qdrant_clinet.get_search_results(self.collection_name, user_message, top_k=10)
+            nodes : List[Node] = self.qdrant_clinet.get_paper_info(search_result=search_result)
+            paper_data = self.format_nodes_to_text(nodes)
+            chat_template_prompt = self.get_chat_template_prompt()
+            input_messages = chat_template_prompt.format_messages(paper_data=paper_data)
+        else :
+            chat_template_prompt = self.get_chat_template_prompt()
+            input_messages = chat_template_prompt.format_messages()
+
+        output = self.app.invoke({"messages": input_messages}, config=config)
+
+        # TODO Convert JSON output to GraphData
+
+        return APIResponse(
+            chat_id=user_input.chat_id, message=output["messages"][-1], newGraph=None
+        )
+    
+    def test_continue_chat(self, user_input: UserInput):
+        config = {"configurable": {"thread_id": user_input.chat_id}}
+        user_message = user_input.message
+
+        # TODO Use LLM to detect does it require additional data from vectorDB
+        is_additional_data_required = self.detect_additional_data(user_input)
+
+        input_messages = None
+        if is_additional_data_required:
+            # TODO Retrieve the paper data from the vectorDB and format it as a message
+            search_result = self.qdrant_clinet.get_search_results(self.collection_name, user_message, top_k=10)
+            nodes : List[Node] = self.qdrant_clinet.get_paper_info(search_result=search_result)
+            paper_data = self.format_nodes_to_text(nodes)
+            chat_template_prompt = self.get_chat_template_prompt()
+            input_messages = chat_template_prompt.format_messages(paper_data=paper_data)
+        else :
+            chat_template_prompt = self.get_chat_template_prompt()
+            input_messages = chat_template_prompt.format_messages()
+
+        output = self.app.invoke({"messages": input_messages}, config=config)
+
+        for message in output["messages"]:
+            print(message.pretty_print())  
+
+    def detect_additional_data(self, user_input: UserInput) -> bool:
+        config = {"configurable": {"thread_id": user_input.chat_id}}
+        user_message = user_input.message
+        current_graph = user_input.currentGraph
+
+        # TODO Use LLM to detect does it require additional data from vectorDB
+        detect_additional_data_template = self.get_detect_additional_data_template()
+        input_messages = detect_additional_data_template.format_messages(message=user_message, current_graph=current_graph)
+
+        output = self.app.invoke({"messages": input_messages}, config=config)
+
+        ## TODO Check the output message is "Yes" or "No"
+        return output["messages"][-1].content == "Yes"
+    
+    def test_detect_additional_data(self, user_input: UserInput):
+        config = {"configurable": {"thread_id": user_input.chat_id}}
+        user_message = user_input.message
+        current_graph = user_input.currentGraph
+
+        # TODO Use LLM to detect does it require additional data from vectorDB
+        detect_additional_data_template = self.get_detect_additional_data_template()
+        input_messages = detect_additional_data_template.format_messages(message=user_message, current_graph=current_graph)
+
+        output = self.app.invoke({"messages": input_messages}, config=config)
+
+        for message in output["messages"]:
+            print(message.pretty_print())
+
+    def get_chat_history(self, chat_id: str) -> List[str]:
+        config = {"configurable": {"thread_id": chat_id}}
+        state = self.app.get_state(config=config).values
+
+        return [message for message in state["messages"]]
+
+    def clear_chat(self, chat_id: str):
+        pass
+
+    def get_system_template_prompt(self):
+        return self.system_template_prompt 
+
+    def set_system_template_prompt(self, text_propmt: str):
+        chat_prompt_template = ChatPromptTemplate.from_messages(
+            [
+                SystemMessagePromptTemplate.from_template(
+                    # """
+                    # You are summarization assiatant AI. 
+                    # Please help me summarize with the words correctly according to the context by answering in Thai language on {topic} Topic.
+                    # Think step by step and be concise.
+                    # Don't Forget the RULES:
+                    # - Be concise and to the point.
+                    # - Length must not exceed 500 characters. 
+                    # """
+                    text_propmt
                 )
-                self.add_chat_history(chat_history, HumanText=chunk, AIText=res)
-                result += res
-        else:
-            # If no 'text' to chunk, just pass the input_data as is
-            latest_chat_history = chat_history[-1:]
-            res = chain.invoke({**input_data, "chat_history": latest_chat_history})
-            self.add_chat_history(chat_history, HumanText=input_data.get("input", ""), AIText=res)
-            result = res
+            ]
+        )
 
-        return result
+        self.system_template_prompt = chat_prompt_template
 
-    def summarize_transcription(self, text: str, topic: str, template_type: str) -> str:
-        summary_template = self.get_summary_template(template_type)
-        chat_history = []
-        input_data = {"topic": topic, "text": text}
-        result = self.execute_chain(summary_template, input_data, chat_history)
-        return result
+    def get_chat_template_prompt(self):
+        return self.chat_template_prompt
 
-    def summarize_root_transcription(self, text: str, instructor: str, link2course: str) -> str:
-        summary_root_template = self.get_summary_template("root")
-        chat_history = []
+    def set_chat_template_prompt(self, text_prompt: str):
+        chat_prompt_template = ChatPromptTemplate.from_messages(
+            [
+                HumanMessagePromptTemplate.from_template(
+                    text_prompt
+                )
+            ]
+        )
 
-        # Prepare the input content
-        input_content = f"""
-            Content: {text}
-            Instructor: {instructor}
-            Link to course: {link2course}
-        """
+        self.chat_template_prompt = chat_prompt_template
 
-        # First execution of the chain for summarization
-        input_data = {"input": input_content}  # input for the chain
-        result = self.execute_chain(summary_root_template, input_data, chat_history)
+    def get_detect_additional_data_template(self):
+        return self.detect_additional_data_template
 
-        # Now that we have the first result (the summary), we want to format it as JSON.
-        json_input = f"""
-            From the following content, make it a JSON format. Don't MISS any text, emoji from the content. COPY IT!
-            Think step by step and be concise.
+    def set_detect_additional_data_template(self, text_prompt: str): 
+        chat_prompt_template = ChatPromptTemplate.from_messages(
+            [
+                HumanMessagePromptTemplate.from_template(
+                    text_prompt
+                )
+            ]
+        )
 
-            JSON format:
-            {{
-                "attentionGrabber": ,
-                "summaryPart": ,
-                "instructor": ,
-                "targetAudience": ,
-                "courseBenefit": ,
-                "callToAction": ,
-                "hashtag": ,
-            }}
-            Content: {result}  # Use the result from the previous step
-        """
+        self.detect_additional_data_template = chat_prompt_template 
 
-        # Second execution of the chain to convert the summary into the required JSON format
-        json_input_data = {"input": json_input}  # input for the second chain invocation
-        json_result = self.execute_chain(summary_root_template, json_input_data, chat_history)
+    def get_model(self):
+        return self.model
 
-        return json_result
+    def format_nodes_to_text(self, nodes: List[Node]) -> str:
+        paper_data = ""
+        for node in nodes:
+            paper_data += f"""
+                Title: {node.title}
+                Year: {node.year}
+                Authors: {", ".join(node.authors)}
+                Source: {node.source}
+                Abstract: {node.abstract}
+            """
+
+        return paper_data

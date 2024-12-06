@@ -1,12 +1,8 @@
 from pydantic import BaseModel
-from enum import Enum
-from .GraphData import GraphData  # Updated import
-
-class MessageType(str, Enum):
-    InitialChat = "InitialChat"
-    ContinueChat = "ContinueChat"
+from .GraphData import GraphData
+from typing import Optional
 
 class UserInput(BaseModel):
+    chat_id: str
     message: str
-    type: MessageType
-    currentGraph: GraphData
+    currentGraph: Optional[GraphData]
