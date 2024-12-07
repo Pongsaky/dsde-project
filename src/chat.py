@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 from langchain_core.prompts import (
     ChatPromptTemplate,
     HumanMessagePromptTemplate,
@@ -23,6 +23,7 @@ from app.models.GraphData import Node, GraphLink, GraphData
 import json
 
 from langchain_core.messages import RemoveMessage
+from pathlib import Path
 
 load_dotenv()
 
@@ -47,7 +48,25 @@ class Chat(ChatInterface):
         self.memory = MemorySaver()
         self.app = self.workflow.compile(checkpointer=self.memory)
 
+        self.system_template_prompt = None
         self.chat_template_prompt_text = None
+        self.detect_additional_data_template = None
+
+        self.load_templates()
+
+    def load_templates(self):
+        templates_path = Path("src/prompt_template")
+        self.set_system_template_prompt((templates_path / "system_template_prompt.txt").read_text())
+        self.set_chat_template_prompt((templates_path / "chat_template_prompt.txt").read_text())
+        self.set_detect_additional_data_template((templates_path / "detect_additional_data_template.txt").read_text())
+
+        # Debugging load_templates
+        # print("================= System Template Prompt ================")
+        # print(self.system_template_prompt)
+        # print("================= Chat Template Prompt ================")
+        # print(self.chat_template_prompt)
+        # print("================= Detect Additional Data Template ================")
+        # print(self.detect_additional_data_template)
 
     def call_model(self, state: MessagesState):
         system_template_prompt = self.get_system_template_prompt()
@@ -58,6 +77,7 @@ class Chat(ChatInterface):
         return {"messages": response}
 
     def initial_chat(self, user_input: UserInput) -> APIResponse:
+
         user_message = user_input.message
         chat_template_prompt = self.get_chat_template_prompt()
 
@@ -68,7 +88,7 @@ class Chat(ChatInterface):
         input_messages = chat_template_prompt.format_messages(paper_data=paper_data, message=user_message)
 
         chat_id = None
-        if user_input.chat_id is not None:
+        if user_input.chat_id is None:
             chat_id = str(uuid.uuid4())
         else:
             chat_id = user_input.chat_id
@@ -76,7 +96,6 @@ class Chat(ChatInterface):
         config = {"configurable": {"thread_id": chat_id}}
 
         output = self.app.invoke({"messages": input_messages}, config=config)
-        print(output["messages"])
 
         # Convert JSON output to message and GraphData
         graph_data, summation =  self.format_chat_json_to_graph_link(output["messages"][-1].content)
@@ -96,7 +115,7 @@ class Chat(ChatInterface):
         input_messages = chat_template_prompt.format_messages(paper_data=paper_data, message=user_message)
 
         chat_id = None
-        if user_input.chat_id is not None:
+        if user_input.chat_id is None:
             chat_id = user_input.chat_id
         else:
             chat_id = str(uuid.uuid4())
@@ -117,6 +136,7 @@ class Chat(ChatInterface):
         # Use LLM to detect does it require additional data from vectorDB
         is_additional_data_required = self.detect_additional_data(user_input)
 
+        print(is_additional_data_required)
         input_messages = None
         if is_additional_data_required.isNeed:
             # Retrieve the paper data from the vectorDB and format it as a message
@@ -188,10 +208,14 @@ class Chat(ChatInterface):
 
         output = self.app.invoke({"messages": input_messages}, config=config)
         chat_json_response = output["messages"][-1].content
-        print(output["messages"][-1].content)
-
+        # print(output["messages"][-1].content)
+        print("============= Chat JSON Response =============")
+        print(chat_json_response)
         chat_json_response = chat_json_response.split("```json")[1].split("```")[0]
         detect_additional_response_json = json.loads(chat_json_response)
+
+        print("============= Detect Additional Response =============")
+        print(detect_additional_response_json)
 
         detect_additional_response = DetectAdditionalData(
             isNeed=self.convert_detect_additional_data_to_boolean(detect_additional_response_json["isNeed"]),
@@ -295,7 +319,7 @@ class Chat(ChatInterface):
             paper_data += f"{node_json}\n" 
         return paper_data
 
-    def format_chat_json_to_graph_link(chat_json_response: str) -> List[GraphLink]:
+    def format_chat_json_to_graph_link(self, chat_json_response: str) -> Tuple[GraphData, str]:
         """
         Example of chat_json_response
         ```json
@@ -343,7 +367,7 @@ class Chat(ChatInterface):
             link = GraphLink(**link)
             links.append(link)
 
-        return GraphData(nodes=nodes, links=links), graph_data["summation"]
+        return GraphData(nodes=nodes, links=links), graph_data["summation"]['msg']
     
     def convert_detect_additional_data_to_boolean(self, detect_additional_data_response: str) -> bool:
         # normalize the detect_additional_data_response to lowercase and delete \n

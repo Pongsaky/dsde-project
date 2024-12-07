@@ -16,3 +16,4 @@ test.ipynb
 qdrant_storage/*
 *.log
 *.csv
+tmp.txt

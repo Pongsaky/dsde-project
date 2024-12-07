@@ -1,0 +1,9 @@
+From the previous conversation, I have a graph data that contains some papers and keywords.
+{message}
+According to the amoung of paper that I have Do i need more articles for above message? If need more say "yes" otherwise say "no"
+
+{current_graph}
+
+Accordning to the amount, quality and usage of paper that related to the topic of the conversation. Do the user needs the more number of papers?
+If yes reply \"Yes\" Otherwise \"No\" followed by the reason of the answer. Furthermore, suggest the next appropriate step to the user by,
+considering the overall of this conversation efficieintly. Be calm, friendly, natural and love to give the best service to the user." 
