@@ -20,5 +20,5 @@ class GraphLink(BaseModel):
     target: str
 
 class GraphData(BaseModel): 
-    nodes: List[Node]
-    links: List[GraphLink]
+    nodes: Optional[List[Node]]
+    links: Optional[List[GraphLink]]

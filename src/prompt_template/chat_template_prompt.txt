@@ -1,1 +1,8 @@
 {paper_data}
+from the above data If the user didn't change, shift, or start to any new topics and the above data isn't related the what user's talking about,
+you are able to ignore those datas.
+
+User message : {message}
+
+[If the converson is about finding more data, do the following task. Otherwise, ignore it] :
+If there is no data that related to the wanted topic that much just tell the user politly that There is no additional data that they are finding in the data base.

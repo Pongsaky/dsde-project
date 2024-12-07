@@ -155,8 +155,7 @@ class Chat(ChatInterface):
         if self.chat_template_prompt_text.find("{paper_data}") == -1:
             chat_template_text = "".join([message.content for message in chat_template_prompt.format_messages(message=user_message)]) + "\n{paper_data}"
             self.set_chat_template_prompt(chat_template_text)
-
-        # Convert JSON output to GraphData
+        
         graph_data, summation =  self.format_chat_json_to_graph_link(output["messages"][-1].content)
 
         return APIResponse(
@@ -324,41 +323,48 @@ class Chat(ChatInterface):
         print("============= Chat JSON Response =============")
         print(chat_json_response)
 
-        # Select content between ```json and ```
         chat_json_response = chat_json_response.split("```json")[1].split("```")[0]
-        # print(chat_json_response)
         graph_data = json.loads(chat_json_response)
-        # print(graph_data)
-        nodes_json = graph_data["nodes"]
-        links_json = graph_data["links"]
 
+        nodes_json = None
+        links_json = None
+
+        if "nodes" in graph_data:
+            nodes_json = graph_data["nodes"]
+
+        if "links" in graph_data:
+            links_json = graph_data["links"]
+        
         nodes = []
-        for node in nodes_json:
-            if "label" in node:
-                node["title"] = node["label"]
-                del node["label"]
-            
-            if "year" not in node:
-                node["year"] = None
-            
-            if "abstract" not in node:
-                node["abstract"] = None
-
-            if "authors" not in node:
-                node["authors"] = None
-
-            if "source" not in node:
-                node["source"] = None
-                
-            node = Node(**node)
-            nodes.append(node)
-
         links = []
-        for link in links_json:
-            link = GraphLink(**link)
-            links.append(link)
 
-        return GraphData(nodes=nodes, links=links), graph_data["summation"]['msg']
+        if nodes_json is not None:
+            for node in nodes_json:
+                if "label" in node:
+                    node["title"] = node["label"]
+                    del node["label"]
+                
+                if "year" not in node:
+                    node["year"] = None
+                
+                if "abstract" not in node:
+                    node["abstract"] = None
+
+                if "authors" not in node:
+                    node["authors"] = None
+
+                if "source" not in node:
+                    node["source"] = None
+                    
+                node = Node(**node)
+                nodes.append(node)
+
+        if links_json is not None:
+            for link in links_json:
+                link = GraphLink(**link)
+                links.append(link)
+
+        return GraphData(nodes=None if len(nodes) == 0 else nodes, links=None if len(links) == 0 else links), graph_data["summation"]
     
     def convert_detect_additional_data_to_boolean(self, detect_additional_data_response: str) -> bool:
         # normalize the detect_additional_data_response to lowercase and delete \n
