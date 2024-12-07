@@ -60,7 +60,7 @@ class Chat(ChatInterface):
         user_message = user_input.message
         chat_template_prompt = self.get_chat_template_prompt()
 
-        # TODO Retrieve the paper data from the vectorDB and format it as a message
+        # Retrieve the paper data from the vectorDB and format it as a message
         search_result = self.qdrant_clinet.get_search_results(self.collection_name, user_message, top_k=8)
         nodes : List[Node] = self.qdrant_clinet.get_paper_info(search_result=search_result)
         paper_data = self.format_nodes_to_text(nodes)
@@ -78,9 +78,10 @@ class Chat(ChatInterface):
         print(output["messages"])
 
         # TODO Convert JSON output to message and GraphData
+        graph_data = self.format_chat_json_to_graph_link(output["messages"][-1].content)
 
         return APIResponse(
-            chat_id=chat_id, message=output["messages"][-1], newGraph=None
+            chat_id=chat_id, message=output["messages"][-1], newGraph=graph_data
         )
     
     def test_initial_chat(self, user_input: UserInput):
@@ -271,7 +272,7 @@ class Chat(ChatInterface):
             paper_data += f"{node_json}\n"
         return paper_data
 
-    def format_chat_json_to_graph_link(self, chat_json_response: str) -> List[GraphLink]:
+    def format_chat_json_to_graph_link(self,  chat_json_response: str) -> List[GraphLink]:
         """
         Example of chat_json_response
         ```json
@@ -284,9 +285,42 @@ class Chat(ChatInterface):
         ]
         ```
         """
-        links_data = json.loads(chat_json_response)
-        graph_links = [GraphLink(**link) for link in links_data]
-        return graph_links
+
+        # Select content between ```json and ```
+        chat_json_response = chat_json_response.split("```json")[1].split("```")[0]
+        # print(chat_json_response)
+        graph_data = json.loads(chat_json_response)
+        # print(graph_data)
+        nodes_json = graph_data["nodes"]
+        links_json = graph_data["links"]
+
+        nodes = []
+        for node in nodes_json:
+            if "label" in node:
+                node["title"] = node["label"]
+                del node["label"]
+            
+            if "year" not in node:
+                node["year"] = None
+            
+            if "abstract" not in node:
+                node["abstract"] = None
+
+            if "authors" not in node:
+                node["authors"] = None
+
+            if "source" not in node:
+                node["source"] = None
+                
+            node = Node(**node)
+            nodes.append(node)
+
+        links = []
+        for link in links_json:
+            link = GraphLink(**link)
+            links.append(link)
+
+        return GraphData(nodes=nodes, links=links)
     
     def convert_detect_additional_data_to_boolean(self, detect_additional_data_response: str) -> bool:
         # normalize the detect_additional_data_response to lowercase and delete \n

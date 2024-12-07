@@ -3,6 +3,6 @@ from .GraphData import GraphData
 from typing import Optional
 
 class UserInput(BaseModel):
-    chat_id: str
+    chat_id: Optional[str]
     message: str
     currentGraph: Optional[GraphData]
