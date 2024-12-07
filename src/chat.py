@@ -209,13 +209,13 @@ class Chat(ChatInterface):
         output = self.app.invoke({"messages": input_messages}, config=config)
         chat_json_response = output["messages"][-1].content
         # print(output["messages"][-1].content)
-        print("============= Chat JSON Response =============")
+        # print("============= Chat JSON Response =============")
         print(chat_json_response)
         chat_json_response = chat_json_response.split("```json")[1].split("```")[0]
         detect_additional_response_json = json.loads(chat_json_response)
 
-        print("============= Detect Additional Response =============")
-        print(detect_additional_response_json)
+        # print("============= Detect Additional Response =============")
+        # print(detect_additional_response_json)
 
         detect_additional_response = DetectAdditionalData(
             isNeed=self.convert_detect_additional_data_to_boolean(detect_additional_response_json["isNeed"]),
@@ -320,18 +320,9 @@ class Chat(ChatInterface):
         return paper_data
 
     def format_chat_json_to_graph_link(self, chat_json_response: str) -> Tuple[GraphData, str]:
-        """
-        Example of chat_json_response
-        ```json
-        [
-            {
-                "source": "some_id",
-                "target": "some_id",
-                "index": 0
-            }
-        ]
-        ```
-        """
+
+        print("============= Chat JSON Response =============")
+        print(chat_json_response)
 
         # Select content between ```json and ```
         chat_json_response = chat_json_response.split("```json")[1].split("```")[0]

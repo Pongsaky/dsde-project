@@ -1,9 +1,14 @@
-From the previous conversation, I have a graph data that contains some papers and keywords.
-{message}
-According to the amoung of paper that I have Do i need more articles for above message? If need more say "yes" otherwise say "no"
+These are your informative data for making the decision if user needs more papers or not:
+- {message}
+- This is the current graph of information that user has:
+  {current_graph}
 
-{current_graph}
+These are your guidelines :
 
 Accordning to the amount, quality and usage of paper that related to the topic of the conversation. Do the user needs the more number of papers?
-If yes reply \"Yes\" Otherwise \"No\" followed by the reason of the answer. Furthermore, suggest the next appropriate step to the user by,
-considering the overall of this conversation efficieintly. Be calm, friendly, natural and love to give the best service to the user." 
+If there are some papers in current graph that related to the topic that user's interted in of researching.
+If yes reply "Yes" Otherwise "No" followed by the reason of the answer. Furthermore, suggest the next appropriate step to the user by
+considering the overall of this conversation detaily. Be calm, friendly, natural and love to give the best service to the user.
+Return the response by this json template:
+"isNeed" : "yes or no",
+"reason" : "the reason that you suggest user to find more papers or the reason that the papaers is enough for user"
