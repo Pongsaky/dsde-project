@@ -46,6 +46,8 @@ class Chat(ChatInterface):
         self.memory = MemorySaver()
         self.app = self.workflow.compile(checkpointer=self.memory)
 
+        self.chat_template_prompt_text = None
+
     def call_model(self, state: MessagesState):
         system_template_prompt = self.get_system_template_prompt()
         system_prompt = system_template_prompt.format_messages()
@@ -139,6 +141,7 @@ class Chat(ChatInterface):
 
         # TODO Use LLM to detect does it require additional data from vectorDB
         is_additional_data_required = self.detect_additional_data(user_input)
+        print(is_additional_data_required)
 
         input_messages = None
         if is_additional_data_required:
@@ -149,10 +152,15 @@ class Chat(ChatInterface):
             chat_template_prompt = self.get_chat_template_prompt()
             input_messages = chat_template_prompt.format_messages(paper_data=paper_data)
         else :
+            self.set_chat_template_prompt(self.chat_template_prompt_text.replace("{paper_data}", ""))
             chat_template_prompt = self.get_chat_template_prompt()
             input_messages = chat_template_prompt.format_messages()
 
         output = self.app.invoke({"messages": input_messages}, config=config)
+
+        if self.chat_template_prompt_text.find("{paper_data}") == -1:
+            chat_template_text = "".join([message.content for message in chat_template_prompt.format_messages()]) + "\n{paper_data}"
+            self.set_chat_template_prompt(chat_template_text)
 
         for message in output["messages"]:
             print(message.pretty_print())
@@ -171,7 +179,9 @@ class Chat(ChatInterface):
         output = self.app.invoke({"messages": input_messages}, config=config)
 
         ## TODO Check the output message is "Yes" or "No"
-        return output["messages"][-1].content == "Yes"
+        print(output["messages"][-1].content)
+
+        return self.convert_detect_additional_data_to_boolean(output["messages"][-1].content)
     
     def test_detect_additional_data(self, user_input: UserInput):
         config = {"configurable": {"thread_id": user_input.chat_id}}
@@ -184,10 +194,11 @@ class Chat(ChatInterface):
 
         output = self.app.invoke({"messages": input_messages}, config=config)
 
-        for message in output["messages"]:
-            print(message.pretty_print())
+        print(output["messages"][-1].pretty_print())
+        # for message in output["messages"]:
+        #     print(message.pretty_print())
 
-        return output["messages"][-1]
+        return self.convert_detect_additional_data_to_boolean(output["messages"][-1].content)
 
     def get_chat_history(self, chat_id: str) -> List[str]:
         config = {"configurable": {"thread_id": chat_id}}
@@ -195,7 +206,13 @@ class Chat(ChatInterface):
 
         return [message for message in state["messages"]]
 
-    def clear_chat(self, chat_id: str):
+    def clear_latest_message(self, chat_id: str):
+        config = {"configurable": {"thread_id": chat_id}}
+        state = self.app.get_state(config=config).values
+        latest_message = state["messages"][-1]
+        self.app.update_state(config=config, values={"messages": RemoveMessage(id=latest_message.id)})
+
+    def clear_all_message(self, chat_id: str):
         config = {"configurable": {"thread_id": chat_id}}
 
         state = self.app.get_state(config=config).values
@@ -228,6 +245,7 @@ class Chat(ChatInterface):
             ]
         )
 
+        self.chat_template_prompt_text = text_prompt
         self.chat_template_prompt = chat_prompt_template
 
     def get_detect_additional_data_template(self):
@@ -269,3 +287,8 @@ class Chat(ChatInterface):
         links_data = json.loads(chat_json_response)
         graph_links = [GraphLink(**link) for link in links_data]
         return graph_links
+    
+    def convert_detect_additional_data_to_boolean(self, detect_additional_data_response: str) -> bool:
+        # normalize the detect_additional_data_response to lowercase and delete \n
+        detect_additional_data_response = detect_additional_data_response.lower().replace("\n", "")
+        return detect_additional_data_response.lower() == "yes"
