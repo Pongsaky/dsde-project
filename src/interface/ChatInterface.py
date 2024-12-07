@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from langgraph.graph import MessagesState
 from app.models.UserInput import UserInput
 
 class ChatInterface(ABC):
@@ -20,7 +19,7 @@ class ChatInterface(ABC):
         pass
     
     @abstractmethod
-    def clear_chat(self, chat_id:str):
+    def clear_all_message(self, chat_id:str):
         pass
 
     @abstractmethod
