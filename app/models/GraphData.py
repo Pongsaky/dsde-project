@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from enum import Enum
-from typing import List
+from typing import List, Optional
 
 class NodeType(str, Enum):
     paper = "paper"
@@ -10,15 +10,14 @@ class Node(BaseModel):
     id: str
     title: str
     type: NodeType
-    year: int
-    abstract: str
-    authors: List[str]
-    source: str
+    year: Optional[int]
+    abstract: Optional[str]
+    authors: Optional[List[str]]
+    source: Optional[str]
 
 class GraphLink(BaseModel):
     source: str
     target: str
-    index: int
 
 class GraphData(BaseModel): 
     nodes: List[Node]
