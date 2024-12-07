@@ -1,7 +1,13 @@
+If the input message that you obtain from user is asking if they need for more paper or the current status of papers that you give to them
+is enough, you have to be concern the text after this but if the user is talking about the other things that's related to additional data retrieving,
+just return the response in json format:
+"summation": [your text that want to give back to user]
+
+[After this, it's the part of tasks that you have to do for the situation that user asked if they need more paper or not]
 These are your informative data for making the decision if user needs more papers or not:
-- {message}
+-  User message : {message}
 - This is the current graph of information that user has:
-  {current_graph}
+   current status or graph : {current_graph}
 
 These are your guidelines :
 
