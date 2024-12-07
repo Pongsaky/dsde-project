@@ -3,7 +3,7 @@ import logging
 print("Initializing logger...")
 
 # Set up logging
-logger = logging.getLogger("AFAST-LLMS")
+logger = logging.getLogger("DSDE-logging")
 logger.setLevel(logging.DEBUG)
 
 # Console handler

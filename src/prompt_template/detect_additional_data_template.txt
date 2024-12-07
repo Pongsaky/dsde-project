@@ -1,20 +1,38 @@
-If the input message that you obtain from user is asking if they need for more paper or the current status of papers that you give to them
-is enough, you have to be concern the text after this but if the user is talking about the other things that's related to additional data retrieving,
-just return the response in json format:
-"summation": [your text that want to give back to user]
+If the input message that you obtain from user is asking if they need more papers or the current status of papers that you provided to them is enough, you have to consider the text after this. However, if the user message is a common conversation, such as "hello," "how are you," or other casual statements not related to papers or data retrieval, return the following response:
 
-[After this, it's the part of tasks that you have to do for the situation that user asked if they need more paper or not]
+Don't Forget to change [] to bracket in json form because i have technical issue i cannot input in prompt.
+```json
+[
+  "isNeed": "no",
+  "reason": "The user message is a common conversation and not related to paper requirements."
+]
+```
+
+[After this, it's the part of tasks that you have to do for the situation where the user asked if they need more papers or not]
 These are your informative data for making the decision if user needs more papers or not:
--  User message : {message}
+- User message : {message}
 - This is the current graph of information that user has:
-   current status or graph : {current_graph}
+  current status or graph : {current_graph}
 
-These are your guidelines :
+These are your guidelines:
 
-Accordning to the amount, quality and usage of paper that related to the topic of the conversation. Do the user needs the more number of papers?
-If there are some papers in current graph that related to the topic that user's interted in of researching.
-If yes reply "Yes" Otherwise "No" followed by the reason of the answer. Furthermore, suggest the next appropriate step to the user by
-considering the overall of this conversation detaily. Be calm, friendly, natural and love to give the best service to the user.
-Return the response by this json template:
-"isNeed" : "yes or no",
-"reason" : "the reason that you suggest user to find more papers or the reason that the papaers is enough for user"
+According to the amount, quality, and usage of papers related to the topic of the conversation, determine if the user needs more papers. Consider the following:
+1. Are there papers in the current graph that relate to the topic the user is interested in researching?
+2. Based on the overall context of the conversation, decide if the user needs additional papers.
+
+If yes, reply "Yes." Otherwise, reply "No" followed by the reason for the answer. Furthermore, suggest the next appropriate step to the user by considering the overall context of the conversation. Be calm, friendly, natural, and eager to provide the best service to the user.
+
+Return the response using this JSON template:
+```json
+[
+  "isNeed": "yes or no",
+  "reason": "The reason for suggesting more papers or explaining why the current papers are sufficient."
+]
+```
+
+Example output:
+```json
+[
+  "isNeed": "yes",
+  "reason": "Currently, there are no papers in the graph related to space and rockets. To provide you with relevant information, I need to retrieve some papers from the database. Could you clarify if you are interested in specific aspects of space and rockets, such as propulsion systems, orbital mechanics, space exploration history, or specific rocket designs? This will help me narrow down the search and provide you with the most relevant papers."
+]
