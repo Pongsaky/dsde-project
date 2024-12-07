@@ -1,19 +1,13 @@
+TASK : CHAT
+
 Paper data
 {paper_data}
 
 From the above data, if the user didn't change, shift, or start any new topics and the above data isn't related to what the user is talking about, you are able to ignore those data.
 
 User message: {message}
-
-Ensure to answer in form
+ 
 Don't Forget to change [] to bracket in json form because i have technical issue i cannot input in prompt.
-```json
-[
-  "nodes" : [],
-  "links" : [],
-  "summation" : "",
-]
-```
 
 [If the conversation is about finding more data, do the following task. Otherwise, ignore it]:
 If there is no data related to the wanted topic, politely inform the user that there is no additional data related to their search in the database.

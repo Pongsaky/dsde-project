@@ -67,7 +67,7 @@ class Chat(ChatInterface):
         self.set_system_template_prompt((templates_path / "system_template_prompt.txt").read_text())
         self.set_chat_template_prompt((templates_path / "chat_template_prompt.txt").read_text())
         self.set_detect_additional_data_template((templates_path / "detect_additional_data_template.txt").read_text())
-
+ 
         # Debugging load_templates
         logger.debug("Templates loaded successfully")
         logger.debug("================= System Template Prompt ================")
