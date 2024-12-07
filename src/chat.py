@@ -232,8 +232,9 @@ class Chat(ChatInterface):
     def clear_latest_message(self, chat_id: str):
         config = {"configurable": {"thread_id": chat_id}}
         state = self.app.get_state(config=config).values
-        latest_message = state["messages"][-1]
-        self.app.update_state(config=config, values={"messages": RemoveMessage(id=latest_message.id)})
+        # latest_message = state["messages"][-1]
+        for message in state["messages"][-2:len(state["messages"])]:
+            self.app.update_state(config=config, values={"messages": RemoveMessage(id=message.id)})
 
     def clear_all_message(self, chat_id: str):
         config = {"configurable": {"thread_id": chat_id}}
@@ -291,7 +292,7 @@ class Chat(ChatInterface):
         paper_data = ""
         for node in nodes:
             node_json = json.dumps(node.model_dump(), indent=4)
-            paper_data += f"{node_json}\n"
+            paper_data += f"{node_json}\n" 
         return paper_data
 
     def format_chat_json_to_graph_link(chat_json_response: str) -> List[GraphLink]:
