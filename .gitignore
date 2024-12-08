@@ -17,3 +17,5 @@ qdrant_storage/*
 *.log
 *.csv
 tmp.txt
+
+*.snapshot

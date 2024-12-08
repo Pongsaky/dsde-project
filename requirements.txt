@@ -11,4 +11,5 @@ langchain-google-vertexai
 google-generativeai
 langchain-google-genai
 langgraph
-"fastapi[standard]"
+fastapi[standard]
+uvicorn
