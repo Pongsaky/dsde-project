@@ -1,0 +1,25 @@
+FROM qdrant/qdrant:v1.12.4
+
+# Copy the snapshot into the container
+COPY ./snapshots/DSDE-project-embedding.snapshot /snapshots/DSDE-project-embedding.snapshot
+
+# Use an environment variable for the collection name
+ENV COLLECTION_NAME=my_collection
+
+# Define the entrypoint with dynamic collection name
+ENTRYPOINT ["/bin/bash", "-c", " \
+    # Start Qdrant in the background \
+    qdrant & \
+    echo 'Waiting for Qdrant to start...' && \
+    sleep 5 && \
+    \
+    # Restore the snapshot using the environment variable \
+    echo 'Restoring snapshot for collection $COLLECTION_NAME...' && \
+    curl -X POST \"http://localhost:6333/collections/$COLLECTION_NAME/snapshots/recover\" \
+         -H 'Content-Type: application/json' \
+         -d '{\"location\": \"/snapshots/my_collection.snapshot\"}' && \
+    echo 'Snapshot restoration for $COLLECTION_NAME complete.' && \
+    \
+    # Keep the container running \
+    tail -f /dev/null \
+"]

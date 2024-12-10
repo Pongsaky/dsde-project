@@ -1,0 +1,13 @@
+data
+qdran_storage
+
+data.csv
+cleaned_arxiv.csv
+scopus_unexplode_data.csv
+arxiv_dataset.csv
+small_arxiv_dataset.csv
+scrap_arxiv_paper.csv
+
+*.json
+
+process.log

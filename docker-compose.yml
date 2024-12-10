@@ -1,0 +1,26 @@
+services:
+  fastapi:
+    build:
+      context: ./fastapi
+      dockerfile: ./Dockerfile.fastapi
+    container_name: fastapi-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      - qdrant
+    restart: unless-stopped
+  qdrant:
+    build:
+      context: ./qdrant
+      dockerfile: ./Dockerfile.qdrant
+    container_name: qdrant
+    ports:
+      - "6333:6333"
+    environment:
+      COLLECTION_NAME: DSDE-project-embedding # Specify the collection name here
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
+    restart: unless-stopped

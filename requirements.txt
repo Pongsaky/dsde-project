@@ -1,0 +1,15 @@
+qdrant-client==1.10.1
+llama-index==0.10.53
+python-dotenv==1.0.1
+langchain-community==0.2.7
+langchain-core==0.2.12
+langchain-openai==0.1.14
+langchain-text-splitters==0.2.2
+langchain==0.2.7
+openai==1.35.10
+langchain-google-vertexai
+google-generativeai
+langchain-google-genai
+langgraph
+fastapi[standard]
+uvicorn
